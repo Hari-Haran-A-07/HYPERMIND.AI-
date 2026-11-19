@@ -29,6 +29,9 @@ desktop.ini
 *.log
 npm-debug.log*
 
+# TypeScript
+*.tsbuildinfo
+
 # Testing
 coverage/
 .nyc_output/
