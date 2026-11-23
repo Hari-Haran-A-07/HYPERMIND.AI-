@@ -1,16 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { notFound, useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import {
   Share2,
   Download,
-  MoreVertical,
   ArrowLeft,
-  Sparkles,
-  Bot,
   Plus,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -20,12 +18,13 @@ import {
   ChatMessage,
   Conversation,
 } from '@/lib/mock-data';
-import { getModelById, getDefaultModel } from '@/lib/models';
+import { getModelById, getDefaultModel, resolveApiModelId } from '@/lib/models';
 import { MessageList } from '@/components/chat/message-list';
 import { ChatInput, ChatAttachmentItem } from '@/components/chat/chat-input';
 import { ModelBadge } from '@/components/chat/model-badge';
-import { ModelSelector } from '@/components/chat/model-selector';
 import { useUIStore } from '@/lib/stores/ui-store';
+import { useChatStore } from '@/lib/stores/chat-store';
+import type { SSEError } from '@/lib/api/ai-client';
 
 interface ChatDetailPageProps {
   params?: {
@@ -43,10 +42,15 @@ export default function ChatDetailPage({ params }: ChatDetailPageProps) {
 
   const [conversation, setConversation] = useState<Conversation>(initialConversation);
   const [messages, setMessages] = useState<ChatMessage[]>(initialConversation.messages);
-  const [isGenerating, setIsGenerating] = useState(false);
 
   const selectedModelId = useUIStore((state) => state.selectedModelId);
   const currentModel = getModelById(conversation.modelId || selectedModelId) || getDefaultModel();
+
+  // Chat store for streaming state
+  const isStreaming = useChatStore((state) => state.isStreaming);
+  const startStreaming = useChatStore((state) => state.startStreaming);
+  const stopStreaming = useChatStore((state) => state.stopStreaming);
+  const lastFallback = useChatStore((state) => state.lastFallback);
 
   // Update conversation if id param changes
   useEffect(() => {
@@ -57,89 +61,185 @@ export default function ChatDetailPage({ params }: ChatDetailPageProps) {
     }
   }, [id]);
 
-  // Handle sending new user message
-  const handleSendMessage = (content: string, attachments?: ChatAttachmentItem[]) => {
-    if (!content.trim() && (!attachments || attachments.length === 0)) return;
+  // Show fallback notification
+  useEffect(() => {
+    if (lastFallback) {
+      toast.warning(
+        `Model fallback: ${lastFallback.originalModel} → ${lastFallback.fallbackModel}`,
+        {
+          description: lastFallback.reason,
+          duration: 5000,
+          icon: <AlertTriangle className="w-4 h-4" />,
+        }
+      );
+    }
+  }, [lastFallback]);
 
-    const userMessage: ChatMessage = {
-      id: `usr-${Date.now()}`,
-      role: 'user',
-      content,
-      createdAt: new Date().toISOString(),
-      attachments: attachments?.map((att) => ({
-        id: att.id,
-        name: att.name,
-        size: att.size,
-        type: att.type,
-      })),
-      status: 'sent',
-    };
+  // Handle sending new user message with real AI streaming
+  const handleSendMessage = useCallback(
+    (content: string, attachments?: ChatAttachmentItem[]) => {
+      if (!content.trim() && (!attachments || attachments.length === 0)) return;
 
-    // Add user message immediately
-    setMessages((prev) => [...prev, userMessage]);
-    setIsGenerating(true);
+      const userMessage: ChatMessage = {
+        id: `usr-${Date.now()}`,
+        role: 'user',
+        content,
+        createdAt: new Date().toISOString(),
+        attachments: attachments?.map((att) => ({
+          id: att.id,
+          name: att.name,
+          size: att.size,
+          type: att.type,
+        })),
+        status: 'sent',
+      };
 
-    // Simulate AI model reasoning and streaming response
-    setTimeout(() => {
+      // Add user message immediately
+      setMessages((prev) => [...prev, userMessage]);
+
+      // Create placeholder assistant message for streaming
+      const assistantMessageId = `ast-${Date.now()}`;
       const assistantMessage: ChatMessage = {
-        id: `ast-${Date.now()}`,
+        id: assistantMessageId,
         role: 'assistant',
         modelId: currentModel.id,
         createdAt: new Date().toISOString(),
-        content: `### Synthesized Analysis by ${currentModel.name}
-
-I have processed your query regarding:
-> "${content.slice(0, 120)}${content.length > 120 ? '...' : ''}"
-
-#### Core Findings & Strategic Roadmap:
-1. **Algorithmic Convergence**: Execution metrics indicate a high confidence trajectory for this configuration.
-2. **Resource Efficiency**: Projected compute footprint is reduced by **38%** using ${currentModel.name}'s token optimization pipeline.
-3. **Safety Verification**: No constraint violations or semantic drifts were detected during the speculative verification pass.
-
-\`\`\`typescript
-// Generated Verification Routine
-export async function verifyExecutionPipeline(nodeId: string): Promise<boolean> {
-  const telemetry = await fetchTelemetryMetrics(nodeId);
-  return telemetry.latencyP99 < 850 && telemetry.errorRate === 0;
-}
-\`\`\`
-
-Would you like me to expand on the edge-case handling or run a deeper simulation?`,
+        content: '',
+        status: 'streaming',
       };
-
       setMessages((prev) => [...prev, assistantMessage]);
-      setIsGenerating(false);
-    }, 1800);
-  };
+
+      // Build conversation history for context
+      const conversationHistory = messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .slice(-20) // Last 20 messages for context window management
+        .map((m) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        }));
+
+      // Resolve the actual API model ID from the display ID
+      const apiModelId = resolveApiModelId(selectedModelId || currentModel.id);
+
+      // Start real streaming
+      startStreaming(
+        {
+          content,
+          modelId: apiModelId,
+          conversationId: id,
+          conversationHistory,
+          systemPrompt: 'You are HYPERMIND AI, an advanced multi-model intelligence platform. Provide helpful, accurate, and well-structured responses. Use markdown formatting when appropriate.',
+        },
+        // onToken — update assistant message content progressively
+        (accumulatedContent) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: accumulatedContent, status: 'streaming' as const }
+                : msg
+            )
+          );
+        },
+        // onComplete — finalize the message
+        (finalContent, usage, metadata) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    content: finalContent,
+                    status: 'sent' as const,
+                    modelId: metadata?.modelId
+                      ? metadata.modelId
+                      : currentModel.id,
+                  }
+                : msg
+            )
+          );
+
+          // Show usage toast if available
+          if (usage && usage.totalTokens > 0) {
+            toast.info(
+              `${usage.totalTokens.toLocaleString()} tokens · ${usage.latencyMs.toLocaleString()}ms`,
+              { duration: 3000 }
+            );
+          }
+        },
+        // onError — show error and update message
+        (error: SSEError) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    content: msg.content || `⚠️ Error: ${error.message}`,
+                    status: 'sent' as const,
+                  }
+                : msg
+            )
+          );
+
+          if (error.recoverable) {
+            toast.error('AI response failed', {
+              description: `${error.message}. You can try again.`,
+              duration: 5000,
+            });
+          } else {
+            toast.error('AI response failed', {
+              description: error.message,
+              duration: 8000,
+            });
+          }
+        }
+      );
+    },
+    [messages, currentModel, selectedModelId, id, startStreaming]
+  );
+
+  // Handle stop/cancel generation
+  const handleStop = useCallback(() => {
+    stopStreaming();
+
+    // Mark any streaming message as sent
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.status === 'streaming'
+          ? { ...msg, status: 'sent' as const }
+          : msg
+      )
+    );
+  }, [stopStreaming]);
 
   // Handle regenerate assistant message
-  const handleRegenerate = (messageId: string) => {
-    setIsGenerating(true);
-    toast.info('Regenerating alternative response...', { duration: 2000 });
+  const handleRegenerate = useCallback(
+    (messageId: string) => {
+      // Find the user message that preceded this assistant message
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+      if (msgIndex < 0) return;
 
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                createdAt: new Date().toISOString(),
-                content: `### Regenerated Variant (${currentModel.name})
+      // Find the most recent user message before this assistant message
+      let userContent = '';
+      for (let i = msgIndex - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          userContent = messages[i].content;
+          break;
+        }
+      }
 
-Here is an alternative approach optimizing for **latency and maximum parallel throughput**:
+      if (!userContent) {
+        toast.error('Could not find the original user message to regenerate');
+        return;
+      }
 
-- Evaluated subagent consensus with lower voting threshold ($0.75$)
-- Enabled speculative streaming directly to client sockets
-- Cached intermediate vector representations in Redis cluster
+      // Remove the old assistant message
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
 
-Let me know if this solution fits your infrastructure constraints better.`,
-              }
-            : msg
-        )
-      );
-      setIsGenerating(false);
-    }, 1500);
-  };
+      // Re-send the user message content
+      handleSendMessage(userContent);
+      toast.info('Regenerating response...', { duration: 2000 });
+    },
+    [messages, handleSendMessage]
+  );
 
   // Handle edit user message
   const handleEdit = (messageId: string, newContent: string) => {
@@ -231,7 +331,7 @@ Let me know if this solution fits your infrastructure constraints better.`,
       <main className="flex-1 overflow-hidden flex flex-col">
         <MessageList
           messages={messages}
-          isGenerating={isGenerating}
+          isGenerating={isStreaming}
           onRegenerate={handleRegenerate}
           onEdit={handleEdit}
         />
@@ -241,8 +341,8 @@ Let me know if this solution fits your infrastructure constraints better.`,
       <footer className="p-3 sm:p-4 bg-background border-t border-border/40 shrink-0">
         <ChatInput
           onSendMessage={handleSendMessage}
-          isLoading={isGenerating}
-          onStop={() => setIsGenerating(false)}
+          isLoading={isStreaming}
+          onStop={handleStop}
         />
         <div className="flex items-center justify-between max-w-4xl mx-auto px-2 pt-2 text-[10px] text-muted-foreground">
           <span>Active context: {currentModel.contextWindow} tokens</span>

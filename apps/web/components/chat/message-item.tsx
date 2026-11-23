@@ -184,13 +184,20 @@ export function MessageItem({
               )}
             >
               <MarkdownRenderer content={message.content} />
+              {/* Streaming cursor indicator */}
+              {!isUser && message.status === 'streaming' && (
+                <span className="inline-block w-2 h-4 ml-0.5 bg-primary/80 animate-pulse rounded-sm align-text-bottom" />
+              )}
             </div>
           )}
 
-          {/* Hover Action Buttons */}
+          {/* Hover Action Buttons — hidden during streaming */}
           <div
             className={cn(
-              'flex items-center gap-1 pt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150',
+              'flex items-center gap-1 pt-1 transition-opacity duration-150',
+              message.status === 'streaming'
+                ? 'opacity-0 pointer-events-none'
+                : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
               isUser ? 'justify-end' : 'justify-start'
             )}
           >

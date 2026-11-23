@@ -19,12 +19,14 @@ export interface ModelProvider {
 
 export interface AIModel {
   id: string;
+  apiModelId: string; // Exact model ID string sent to the provider API
   name: string;
   provider: string;
   providerName: string;
   description: string;
   contextWindow: string;
-  contextWindowTokens?: number;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
   capabilities: ModelCapability[];
   costPer1MInput: number;
   costPer1MOutput: number;
@@ -33,6 +35,9 @@ export interface AIModel {
   badgeColor?: string;
   badge?: string;
   isPopular?: boolean;
+  supportsStreaming: boolean;
+  supportsSystemPrompt: boolean;
+  supportsImages?: boolean;
 }
 
 export const PROVIDERS: ModelProvider[] = [
@@ -65,31 +70,26 @@ export const PROVIDERS: ModelProvider[] = [
     description: 'High-efficiency open architecture models specialized in chain-of-thought reasoning.',
   },
   {
-    id: 'nvidia',
-    name: 'NVIDIA',
-    icon: 'Cpu',
-    color: '#76B900',
-    description: 'Optimized neural computing models engineered for synthetic data and enterprise tasks.',
-  },
-  {
-    id: 'open-weight',
-    name: 'Open-weight',
+    id: 'openai-compat',
+    name: 'Open Weight',
     icon: 'Layers',
     color: '#8B5CF6',
-    description: 'Leading open-weight foundation models deployable with complete data ownership.',
+    description: 'Open-weight models via Together AI, Fireworks, vLLM, or self-hosted inference.',
   },
 ];
 
 export const MODELS: AIModel[] = [
-  // Anthropic
+  // ── Anthropic ──────────────────────────────────────────────────────────
   {
-    id: 'claude-3-5-sonnet',
-    name: 'Claude 3.5 Sonnet',
+    id: 'claude-sonnet-4',
+    apiModelId: 'claude-sonnet-4-20250514',
+    name: 'Claude Sonnet 4',
     provider: 'anthropic',
     providerName: 'Anthropic',
     description: 'Most intelligent model for complex reasoning, multi-step coding, and nuanced prose.',
     contextWindow: '200K',
-    contextWindowTokens: 200000,
+    contextWindowTokens: 200_000,
+    maxOutputTokens: 8192,
     capabilities: ['reasoning', 'code', 'vision', 'tools', 'general'],
     costPer1MInput: 3.0,
     costPer1MOutput: 15.0,
@@ -98,33 +98,64 @@ export const MODELS: AIModel[] = [
     badgeColor: '#D97757',
     badge: 'Flagship',
     isPopular: true,
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    supportsImages: true,
+  },
+  {
+    id: 'claude-opus-4',
+    apiModelId: 'claude-opus-4-20250514',
+    name: 'Claude Opus 4',
+    provider: 'anthropic',
+    providerName: 'Anthropic',
+    description: 'Most powerful model for deep reasoning, complex analysis, and extended thinking.',
+    contextWindow: '200K',
+    contextWindowTokens: 200_000,
+    maxOutputTokens: 32_768,
+    capabilities: ['reasoning', 'code', 'vision', 'tools', 'general'],
+    costPer1MInput: 15.0,
+    costPer1MOutput: 75.0,
+    status: 'available',
+    iconColor: '#D97757',
+    badgeColor: '#D97757',
+    badge: 'Reasoning',
+    isPopular: true,
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    supportsImages: true,
   },
   {
     id: 'claude-3-5-haiku',
+    apiModelId: 'claude-3-5-haiku-20241022',
     name: 'Claude 3.5 Haiku',
     provider: 'anthropic',
     providerName: 'Anthropic',
     description: 'Lightning-fast responses with exceptional coding ability at a fraction of the latency.',
     contextWindow: '200K',
-    contextWindowTokens: 200000,
+    contextWindowTokens: 200_000,
+    maxOutputTokens: 8192,
     capabilities: ['fast', 'code', 'general'],
-    costPer1MInput: 0.8,
+    costPer1MInput: 0.80,
     costPer1MOutput: 4.0,
     status: 'available',
     iconColor: '#D97757',
     badgeColor: '#D97757',
     badge: 'Fast',
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
   },
 
-  // OpenAI
+  // ── OpenAI ─────────────────────────────────────────────────────────────
   {
     id: 'gpt-4o',
+    apiModelId: 'gpt-4o',
     name: 'GPT-4o',
     provider: 'openai',
     providerName: 'OpenAI',
     description: 'Omni-modal flagship model with native audio, vision, fast inference, and robust tool-calling.',
-    contextWindow: '200K',
-    contextWindowTokens: 200000,
+    contextWindow: '128K',
+    contextWindowTokens: 128_000,
+    maxOutputTokens: 16_384,
     capabilities: ['vision', 'tools', 'reasoning', 'multimodal', 'general'],
     costPer1MInput: 2.5,
     costPer1MOutput: 10.0,
@@ -133,68 +164,109 @@ export const MODELS: AIModel[] = [
     badgeColor: '#10A37F',
     badge: 'Multimodal',
     isPopular: true,
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    supportsImages: true,
   },
   {
     id: 'gpt-4o-mini',
-    name: 'GPT-4o-mini',
+    apiModelId: 'gpt-4o-mini',
+    name: 'GPT-4o Mini',
     provider: 'openai',
     providerName: 'OpenAI',
     description: 'Cost-efficient small model designed for high-throughput, low-latency daily tasks.',
     contextWindow: '128K',
-    contextWindowTokens: 128000,
+    contextWindowTokens: 128_000,
+    maxOutputTokens: 16_384,
     capabilities: ['fast', 'vision', 'tools', 'general'],
     costPer1MInput: 0.15,
-    costPer1MOutput: 0.6,
+    costPer1MOutput: 0.60,
     status: 'available',
     iconColor: '#10A37F',
     badgeColor: '#10A37F',
     badge: 'Affordable',
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    supportsImages: true,
   },
 
-  // Google
+  // ── Google ─────────────────────────────────────────────────────────────
   {
-    id: 'gemini-1-5-pro',
-    name: 'Gemini 1.5 Pro',
+    id: 'gemini-2-5-pro',
+    apiModelId: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
     provider: 'google',
     providerName: 'Google',
-    description: 'Ultra-long 1M context window for processing extensive documents, code repositories, and audio.',
+    description: 'Ultra-powerful reasoning and multimodal model with 1M token context window.',
     contextWindow: '1M',
-    contextWindowTokens: 1000000,
+    contextWindowTokens: 1_000_000,
+    maxOutputTokens: 65_536,
     capabilities: ['multimodal', 'reasoning', 'vision', 'code', 'general'],
-    costPer1MInput: 3.5,
-    costPer1MOutput: 10.5,
+    costPer1MInput: 1.25,
+    costPer1MOutput: 10.0,
     status: 'available',
     iconColor: '#4285F4',
     badgeColor: '#4285F4',
     badge: '1M Context',
     isPopular: true,
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    supportsImages: true,
   },
   {
-    id: 'gemini-1-5-flash',
-    name: 'Gemini 1.5 Flash',
+    id: 'gemini-2-5-flash',
+    apiModelId: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
     provider: 'google',
     providerName: 'Google',
-    description: 'High-frequency multimodal model built for ultra-fast summarization and real-time processing.',
+    description: 'Ultra-fast multimodal model built for high-throughput summarization and real-time processing.',
     contextWindow: '1M',
-    contextWindowTokens: 1000000,
+    contextWindowTokens: 1_000_000,
+    maxOutputTokens: 65_536,
     capabilities: ['fast', 'multimodal', 'vision', 'general'],
-    costPer1MInput: 0.075,
-    costPer1MOutput: 0.3,
+    costPer1MInput: 0.15,
+    costPer1MOutput: 0.60,
     status: 'available',
     iconColor: '#4285F4',
     badgeColor: '#4285F4',
     badge: 'Fast',
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    supportsImages: true,
+  },
+  {
+    id: 'gemini-2-0-flash',
+    apiModelId: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    provider: 'google',
+    providerName: 'Google',
+    description: 'High-frequency multimodal model optimized for rapid generation and cost efficiency.',
+    contextWindow: '1M',
+    contextWindowTokens: 1_000_000,
+    maxOutputTokens: 8192,
+    capabilities: ['fast', 'multimodal', 'vision', 'general'],
+    costPer1MInput: 0.10,
+    costPer1MOutput: 0.40,
+    status: 'available',
+    iconColor: '#4285F4',
+    badgeColor: '#4285F4',
+    badge: 'Economy',
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    supportsImages: true,
   },
 
-  // DeepSeek
+  // ── DeepSeek ───────────────────────────────────────────────────────────
   {
     id: 'deepseek-r1',
+    apiModelId: 'deepseek-reasoner',
     name: 'DeepSeek-R1',
     provider: 'deepseek',
     providerName: 'DeepSeek',
     description: 'Specialized open reasoning model utilizing reinforced chain-of-thought verification for STEM and logic.',
     contextWindow: '64K',
-    contextWindowTokens: 64000,
+    contextWindowTokens: 64_000,
+    maxOutputTokens: 8192,
     capabilities: ['reasoning', 'code', 'general'],
     costPer1MInput: 0.55,
     costPer1MOutput: 2.19,
@@ -203,15 +275,19 @@ export const MODELS: AIModel[] = [
     badgeColor: '#0066FF',
     badge: 'Reasoning',
     isPopular: true,
+    supportsStreaming: true,
+    supportsSystemPrompt: false,
   },
   {
     id: 'deepseek-v3',
+    apiModelId: 'deepseek-chat',
     name: 'DeepSeek-V3',
     provider: 'deepseek',
     providerName: 'DeepSeek',
     description: '671B Mixture-of-Experts architecture delivering frontier-grade general capabilities at extreme efficiency.',
     contextWindow: '128K',
-    contextWindowTokens: 128000,
+    contextWindowTokens: 128_000,
+    maxOutputTokens: 8192,
     capabilities: ['general', 'code', 'fast'],
     costPer1MInput: 0.14,
     costPer1MOutput: 0.28,
@@ -219,62 +295,34 @@ export const MODELS: AIModel[] = [
     iconColor: '#0066FF',
     badgeColor: '#0066FF',
     badge: 'MoE',
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
   },
 
-  // NVIDIA
+  // ── GPT-OSS 120B (Open Weight via Together/Fireworks/vLLM) ─────────────
   {
-    id: 'nemotron-4',
-    name: 'Nemotron-4',
-    provider: 'nvidia',
-    providerName: 'NVIDIA',
-    description: 'Enterprise-grade synthetic data generation and dialogue alignment optimized on TensorRT-LLM.',
+    id: 'gpt-oss-120b',
+    apiModelId: 'openai/gpt-oss-120b',
+    name: 'GPT-OSS 120B',
+    provider: 'openai-compat',
+    providerName: 'Open Weight',
+    description: 'OpenAI open-weight ~117B MoE model with 128K context. Apache 2.0 license. Via Together AI or self-hosted.',
     contextWindow: '128K',
-    contextWindowTokens: 128000,
-    capabilities: ['reasoning', 'general'],
-    costPer1MInput: 0.2,
-    costPer1MOutput: 0.8,
-    status: 'preview',
-    iconColor: '#76B900',
-    badgeColor: '#76B900',
-    badge: 'Community',
-  },
-
-  // Open-weight
-  {
-    id: 'llama-3-1-70b',
-    name: 'Llama 3.1 70B',
-    provider: 'open-weight',
-    providerName: 'Meta',
-    description: 'Industry-standard open foundation model with high general reasoning and tool call accuracy.',
-    contextWindow: '128K',
-    contextWindowTokens: 128000,
-    capabilities: ['general', 'code', 'reasoning', 'tools'],
-    costPer1MInput: 0.52,
-    costPer1MOutput: 0.75,
+    contextWindowTokens: 128_000,
+    maxOutputTokens: 4096,
+    capabilities: ['general', 'code', 'reasoning'],
+    costPer1MInput: 0.88,
+    costPer1MOutput: 0.88,
     status: 'available',
-    iconColor: '#0081FB',
-    badgeColor: '#0081FB',
+    iconColor: '#8B5CF6',
+    badgeColor: '#8B5CF6',
     badge: 'Open Weight',
-  },
-  {
-    id: 'mistral-large',
-    name: 'Mistral Large',
-    provider: 'open-weight',
-    providerName: 'Mistral AI',
-    description: 'Frontier multilingual and advanced coding powerhouse with native JSON output and function calling.',
-    contextWindow: '128K',
-    contextWindowTokens: 128000,
-    capabilities: ['reasoning', 'code', 'tools', 'general'],
-    costPer1MInput: 2.0,
-    costPer1MOutput: 6.0,
-    status: 'available',
-    iconColor: '#FF7000',
-    badgeColor: '#FF7000',
-    badge: 'Multilingual',
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
   },
 ];
 
-export const DEFAULT_MODEL_ID = 'claude-3-5-sonnet';
+export const DEFAULT_MODEL_ID = 'claude-sonnet-4';
 
 export function getDefaultModel(): AIModel {
   return (
@@ -286,6 +334,17 @@ export function getDefaultModel(): AIModel {
 export function getModelById(id?: string): AIModel {
   if (!id) return getDefaultModel();
   return MODELS.find((model) => model.id === id) || getDefaultModel();
+}
+
+/** Look up a model by its API model ID string */
+export function getModelByApiId(apiModelId: string): AIModel | undefined {
+  return MODELS.find((model) => model.apiModelId === apiModelId);
+}
+
+/** Resolve the API model ID from a frontend display ID */
+export function resolveApiModelId(displayId: string): string {
+  const model = getModelById(displayId);
+  return model.apiModelId;
 }
 
 export function getModelsByProvider(providerId: string): AIModel[] {

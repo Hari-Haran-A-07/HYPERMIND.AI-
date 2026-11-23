@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
@@ -54,16 +54,35 @@ export default function NewChatPage() {
   const router = useRouter();
   const selectedModelId = useUIStore((state) => state.selectedModelId);
   const currentModel = getModelById(selectedModelId) || getDefaultModel();
+  const [isSending, setIsSending] = useState(false);
 
-  const handlePromptClick = (item: SuggestedPrompt) => {
-    // Navigate to conversation with prompt context or load conv-1
-    router.push(`/chat/conv-1`);
-  };
+  const handlePromptClick = useCallback(
+    (item: SuggestedPrompt) => {
+      // Navigate to a new conversation with the prompt content
+      // Store the prompt in sessionStorage so the chat page can pick it up
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('hypermind-pending-prompt', item.prompt);
+      }
+      router.push(`/chat/conv-1`);
+    },
+    [router]
+  );
 
-  const handleSendMessage = (content: string, attachments?: ChatAttachmentItem[]) => {
-    // Navigate to active conversation
-    router.push(`/chat/conv-1`);
-  };
+  const handleSendMessage = useCallback(
+    (content: string, attachments?: ChatAttachmentItem[]) => {
+      if (!content.trim() || isSending) return;
+      setIsSending(true);
+
+      // Store the first message in sessionStorage for the chat page to pick up
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('hypermind-pending-prompt', content);
+      }
+
+      // Navigate to conversation page where the message will be sent with real streaming
+      router.push(`/chat/conv-1`);
+    },
+    [router, isSending]
+  );
 
   return (
     <div className="flex flex-col h-full min-h-[calc(100vh-4rem)] justify-between px-4 sm:px-8 py-6 max-w-5xl mx-auto w-full">
@@ -169,7 +188,7 @@ export default function NewChatPage() {
 
       {/* Composer Input at Bottom */}
       <div className="pt-4 pb-2 w-full">
-        <ChatInput onSendMessage={handleSendMessage} />
+        <ChatInput onSendMessage={handleSendMessage} isLoading={isSending} />
         <p className="text-center text-[11px] text-muted-foreground/70 mt-2.5">
           HYPERMIND AI synthesizes responses across verified frontier engines. Verify critical outputs.
         </p>
