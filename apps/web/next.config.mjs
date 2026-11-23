@@ -6,6 +6,7 @@ const nextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion'],
+    serverComponentsExternalPackages: ['@google/genai', '@anthropic-ai/sdk', 'openai'],
   },
 };
 

@@ -18,6 +18,9 @@ import {
   Settings,
   Sparkles,
   Zap,
+  MessageSquare,
+  Bot,
+  Clapperboard,
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useUIStore } from '@/lib/stores/ui-store';
@@ -37,6 +40,35 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+
+interface WorkspaceNavItem {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const workspaceNavItems: WorkspaceNavItem[] = [
+  {
+    label: 'Chat',
+    href: '/chat',
+    icon: MessageSquare,
+  },
+  {
+    label: 'Agents',
+    href: '/agents',
+    icon: Bot,
+  },
+  {
+    label: 'Creative Studio',
+    href: '/studio',
+    icon: Clapperboard,
+  },
+  {
+    label: 'Settings',
+    href: '/settings',
+    icon: Settings,
+  },
+];
 
 interface SidebarProps {
   onItemSelect?: () => void;
@@ -191,7 +223,35 @@ export function Sidebar({ onItemSelect, className, isMobile = false }: SidebarPr
         </button>
       </div>
 
-      {/* 3. Conversation List grouped by sections */}
+      {/* 3. Navigation Links */}
+      <nav className="px-3 space-y-1 shrink-0" aria-label="Workspace navigation">
+        {workspaceNavItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = pathname ? pathname.startsWith(item.href) : false;
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => onItemSelect?.()}
+              className={cn(
+                'flex items-center gap-2.5 w-full h-9 px-3 rounded-xl text-xs sm:text-sm transition-all duration-150',
+                isActive
+                  ? 'bg-accent/40 text-foreground font-medium'
+                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Subtle Separator */}
+      <div className="mx-3 my-2 border-t border-border/60 shrink-0" role="separator" />
+
+      {/* 4. Conversation List grouped by sections */}
       <ScrollArea className="flex-1 px-3 py-1">
         <div className="space-y-4 pb-4">
           {sections.map((section) => {
@@ -311,7 +371,7 @@ export function Sidebar({ onItemSelect, className, isMobile = false }: SidebarPr
         </div>
       </ScrollArea>
 
-      {/* 4. Bottom: User Profile Strip */}
+      {/* 5. Bottom: User Profile Strip */}
       <div className="p-3 border-t border-border/70 shrink-0 bg-card/60">
         <div className="flex items-center justify-between">
           <Link
