@@ -3,8 +3,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CodeBlock } from '@/components/chat/code-block';
@@ -23,8 +21,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
       )}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath as any]}
-        rehypePlugins={[rehypeKatex as any]}
+        remarkPlugins={[remarkGfm]}
         components={{
           // Code & Syntax Highlighting
           code({ node, className: codeClassName, children, ...props }) {

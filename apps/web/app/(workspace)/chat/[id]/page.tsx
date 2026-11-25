@@ -8,7 +8,6 @@ import {
   Download,
   ArrowLeft,
   Plus,
-  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -18,13 +17,11 @@ import {
   ChatMessage,
   Conversation,
 } from '@/lib/mock-data';
-import { getModelById, getDefaultModel, resolveApiModelId } from '@/lib/models';
+import { getModelById, getDefaultModel } from '@/lib/models';
 import { MessageList } from '@/components/chat/message-list';
 import { ChatInput, ChatAttachmentItem } from '@/components/chat/chat-input';
 import { ModelBadge } from '@/components/chat/model-badge';
 import { useUIStore } from '@/lib/stores/ui-store';
-import { useChatStore } from '@/lib/stores/chat-store';
-import type { SSEError } from '@/lib/api/ai-client';
 
 interface ChatDetailPageProps {
   params?: {
@@ -46,11 +43,7 @@ export default function ChatDetailPage({ params }: ChatDetailPageProps) {
   const selectedModelId = useUIStore((state) => state.selectedModelId);
   const currentModel = getModelById(conversation.modelId || selectedModelId) || getDefaultModel();
 
-  // Chat store for streaming state
-  const isStreaming = useChatStore((state) => state.isStreaming);
-  const startStreaming = useChatStore((state) => state.startStreaming);
-  const stopStreaming = useChatStore((state) => state.stopStreaming);
-  const lastFallback = useChatStore((state) => state.lastFallback);
+  const [isStreaming, setIsStreaming] = useState(false);
 
   // Update conversation if id param changes
   useEffect(() => {
@@ -61,21 +54,7 @@ export default function ChatDetailPage({ params }: ChatDetailPageProps) {
     }
   }, [id]);
 
-  // Show fallback notification
-  useEffect(() => {
-    if (lastFallback) {
-      toast.warning(
-        `Model fallback: ${lastFallback.originalModel} → ${lastFallback.fallbackModel}`,
-        {
-          description: lastFallback.reason,
-          duration: 5000,
-          icon: <AlertTriangle className="w-4 h-4" />,
-        }
-      );
-    }
-  }, [lastFallback]);
-
-  // Handle sending new user message with real AI streaming
+  // Handle sending new user message with mock AI response
   const handleSendMessage = useCallback(
     (content: string, attachments?: ChatAttachmentItem[]) => {
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
@@ -94,111 +73,48 @@ export default function ChatDetailPage({ params }: ChatDetailPageProps) {
         status: 'sent',
       };
 
-      // Add user message immediately
       setMessages((prev) => [...prev, userMessage]);
+      setIsStreaming(true);
 
-      // Create placeholder assistant message for streaming
-      const assistantMessageId = `ast-${Date.now()}`;
+      // Simulate AI response with a delay
+      const mockResponse = `Thank you for your message. This is a simulated response from **${currentModel.name}**.\n\nIn a production environment, this would connect to the ${currentModel.provider} API to generate a real response.\n\n> Your message: "${content.slice(0, 100)}${content.length > 100 ? '...' : ''}"`;
+
       const assistantMessage: ChatMessage = {
-        id: assistantMessageId,
+        id: `ast-${Date.now()}`,
         role: 'assistant',
         modelId: currentModel.id,
         createdAt: new Date().toISOString(),
         content: '',
         status: 'streaming',
       };
+
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Build conversation history for context
-      const conversationHistory = messages
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .slice(-20) // Last 20 messages for context window management
-        .map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        }));
-
-      // Resolve the actual API model ID from the display ID
-      const apiModelId = resolveApiModelId(selectedModelId || currentModel.id);
-
-      // Start real streaming
-      startStreaming(
-        {
-          content,
-          modelId: apiModelId,
-          conversationId: id,
-          conversationHistory,
-          systemPrompt: 'You are HYPERMIND AI, an advanced multi-model intelligence platform. Provide helpful, accurate, and well-structured responses. Use markdown formatting when appropriate.',
-        },
-        // onToken — update assistant message content progressively
-        (accumulatedContent) => {
+      // Simulate streaming word by word
+      const words = mockResponse.split(' ');
+      let accumulated = '';
+      words.forEach((word, i) => {
+        setTimeout(() => {
+          accumulated += (i === 0 ? '' : ' ') + word;
           setMessages((prev) =>
             prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? { ...msg, content: accumulatedContent, status: 'streaming' as const }
+              msg.id === assistantMessage.id
+                ? { ...msg, content: accumulated, status: i === words.length - 1 ? 'sent' as const : 'streaming' as const }
                 : msg
             )
           );
-        },
-        // onComplete — finalize the message
-        (finalContent, usage, metadata) => {
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? {
-                    ...msg,
-                    content: finalContent,
-                    status: 'sent' as const,
-                    modelId: metadata?.modelId
-                      ? metadata.modelId
-                      : currentModel.id,
-                  }
-                : msg
-            )
-          );
-
-          // Show usage toast if available
-          if (usage && usage.totalTokens > 0) {
-            toast.info(
-              `${usage.totalTokens.toLocaleString()} tokens · ${usage.latencyMs.toLocaleString()}ms`,
-              { duration: 3000 }
-            );
+          if (i === words.length - 1) {
+            setIsStreaming(false);
           }
-        },
-        // onError — show error and update message
-        (error: SSEError) => {
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? {
-                    ...msg,
-                    content: msg.content || `⚠️ Error: ${error.message}`,
-                    status: 'sent' as const,
-                  }
-                : msg
-            )
-          );
-
-          if (error.recoverable) {
-            toast.error('AI response failed', {
-              description: `${error.message}. You can try again.`,
-              duration: 5000,
-            });
-          } else {
-            toast.error('AI response failed', {
-              description: error.message,
-              duration: 8000,
-            });
-          }
-        }
-      );
+        }, 50 * (i + 1));
+      });
     },
-    [messages, currentModel, selectedModelId, id, startStreaming]
+    [currentModel]
   );
 
   // Handle stop/cancel generation
   const handleStop = useCallback(() => {
-    stopStreaming();
+    setIsStreaming(false);
 
     // Mark any streaming message as sent
     setMessages((prev) =>
@@ -208,7 +124,7 @@ export default function ChatDetailPage({ params }: ChatDetailPageProps) {
           : msg
       )
     );
-  }, [stopStreaming]);
+  }, []);
 
   // Handle regenerate assistant message
   const handleRegenerate = useCallback(

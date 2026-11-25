@@ -1,168 +1,60 @@
 /**
  * Chat Store — Zustand state management for AI chat sessions
  *
- * Manages streaming state, active generation tracking, message history,
- * and usage metrics. Works with the SSE-based AI client.
+ * Manages streaming simulation, message history, and UI state.
+ * Uses mock data until backend integration is implemented.
  */
 
 import { create } from 'zustand';
-import {
-  streamChat,
-  cancelGeneration,
-  type StreamChatOptions,
-  type SSEMetadata,
-  type SSEDone,
-  type SSEFallback,
-  type SSEError,
-} from '@/lib/api/ai-client';
-import type { ChatMessage } from '@/lib/mock-data';
-
-export interface MessageUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  costUsd: number;
-  latencyMs: number;
-}
 
 export interface ChatState {
-  // Streaming state
+  /** Whether a response is currently streaming */
   isStreaming: boolean;
+  /** ID of the message being streamed */
   streamingMessageId: string | null;
+  /** Accumulated streaming content */
   streamingContent: string;
-  activeServerMessageId: string | null; // For cancellation
 
-  // Metadata
-  lastMetadata: SSEMetadata | null;
-  lastUsage: MessageUsage | null;
-  lastFallback: SSEFallback | null;
-  lastError: SSEError | null;
-
-  // Abort controller for client-side cancellation
-  abortController: AbortController | null;
-
-  // Actions
-  startStreaming: (
-    options: Omit<StreamChatOptions, 'signal'>,
-    onToken: (content: string) => void,
-    onComplete: (finalContent: string, usage: MessageUsage | null, metadata: SSEMetadata | null) => void,
-    onError: (error: SSEError) => void
-  ) => Promise<void>;
-
-  stopStreaming: () => Promise<void>;
-  resetError: () => void;
+  /** Actions */
+  startStreaming: (messageId: string) => void;
+  appendContent: (delta: string) => void;
+  stopStreaming: () => void;
+  reset: () => void;
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
-  // Initial state
   isStreaming: false,
   streamingMessageId: null,
   streamingContent: '',
-  activeServerMessageId: null,
-  lastMetadata: null,
-  lastUsage: null,
-  lastFallback: null,
-  lastError: null,
-  abortController: null,
 
-  startStreaming: async (options, onToken, onComplete, onError) => {
-    // Abort any existing stream
-    const existingController = get().abortController;
-    if (existingController) {
-      existingController.abort();
-    }
-
-    const abortController = new AbortController();
-    const streamingMessageId = `ast-${Date.now()}`;
-    let accumulatedContent = '';
-    let metadata: SSEMetadata | null = null;
-    let usage: MessageUsage | null = null;
-
+  startStreaming: (messageId: string) => {
     set({
       isStreaming: true,
-      streamingMessageId,
+      streamingMessageId: messageId,
       streamingContent: '',
-      activeServerMessageId: null,
-      abortController,
-      lastError: null,
-      lastFallback: null,
     });
-
-    const result = await streamChat(
-      {
-        ...options,
-        signal: abortController.signal,
-      },
-      {
-        onMetadata: (meta) => {
-          metadata = meta;
-          set({ lastMetadata: meta, activeServerMessageId: result?.messageId || null });
-        },
-        onToken: (delta) => {
-          accumulatedContent += delta;
-          set({ streamingContent: accumulatedContent });
-          onToken(accumulatedContent);
-        },
-        onFallback: (fallback) => {
-          set({ lastFallback: fallback });
-        },
-        onError: (error) => {
-          set({ lastError: error, isStreaming: false });
-          onError(error);
-        },
-        onDone: (done) => {
-          usage = {
-            promptTokens: done.promptTokens,
-            completionTokens: done.completionTokens,
-            totalTokens: done.totalTokens,
-            costUsd: done.costUsd,
-            latencyMs: done.latencyMs,
-          };
-          set({
-            lastUsage: usage,
-            isStreaming: false,
-            streamingMessageId: null,
-            streamingContent: '',
-            abortController: null,
-            activeServerMessageId: null,
-          });
-          onComplete(accumulatedContent, usage, metadata);
-        },
-      }
-    );
-
-    // Update server message ID for cancellation
-    if (result.messageId) {
-      set({ activeServerMessageId: result.messageId });
-    }
   },
 
-  stopStreaming: async () => {
-    const { abortController, activeServerMessageId } = get();
+  appendContent: (delta: string) => {
+    set((state) => ({
+      streamingContent: state.streamingContent + delta,
+    }));
+  },
 
-    // Client-side abort
-    if (abortController) {
-      abortController.abort();
-    }
-
-    // Server-side cancel
-    if (activeServerMessageId) {
-      await cancelGeneration(activeServerMessageId).catch(() => {
-        /* ignore cancel errors */
-      });
-    }
-
+  stopStreaming: () => {
     set({
       isStreaming: false,
       streamingMessageId: null,
       streamingContent: '',
-      abortController: null,
-      activeServerMessageId: null,
     });
   },
 
-  resetError: () => {
-    set({ lastError: null });
+  reset: () => {
+    set({
+      isStreaming: false,
+      streamingMessageId: null,
+      streamingContent: '',
+    });
   },
 }));
 
